@@ -57,6 +57,7 @@ CREATE COMPUTE MODULE ATLCAS14_Compute
       || CAST(EXTRACT(SECOND FROM CURRENT_GMTTIME) AS CHAR FORMAT '00');
 
     -- HTTP Request Header
+	-- HTTP Request Header
 
     SET OutputRoot.HTTPRequestHeader.SOAPAction
       = '"http://www.accenture.com/IWSContract/Import_PresentationLayerObject_AggregationQueue"';
