@@ -1,0 +1,82 @@
+CREATE FILTER MODULE NULL_filter
+CREATE FUNCTION main() RETURNS BOOLEAN
+	BEGIN
+		RETURN Root.XML IS NOT NULL;
+	END; 
+END MODULE;
+
+CREATE FILTER MODULE Has_destination_queue
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		RETURN Root.MQRFH2.usr.destination_queue IS NOT NULL;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE Prepare_for_exception_logging
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		--SET OutputRoot.MQMD.SourceQueue=InputRoot.MQRFH2.usr.input_queue;
+		SET OutputRoot.MQMD.SourceQueue=InputRoot.Collection.CollectionName;
+		SET OutputRoot.XML.dummy='';
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE Propagate_to_collector
+DECLARE OutputQueueName EXTERNAL CHARACTER;
+CREATE FUNCTION Main() RETURNS BOOLEAN
+      BEGIN 
+            SET OutputRoot=InputRoot;
+            IF OutputQueueName IS NOT NULL AND Trim(OutputQueueName)>'' THEN
+            	SET OutputRoot.MQRFH2.usr.destination_queue=OutputQueueName;
+                PROPAGATE DELETE NONE;
+            ELSE
+	            DECLARE CARD_DESTQ INTEGER cardinality(InputDestinationList.Destination.MQDestinationList.DestinationData[]); 
+    	        DECLARE i INTEGER 1;
+        	    WHILE i <= CARD_DESTQ DO
+					SET OutputRoot.MQRFH2.usr.destination_queue=FIELDVALUE(InputDestinationList.Destination.MQDestinationList.DestinationData[i].queueName);
+                	PROPAGATE DELETE NONE;
+            		SET i=i+1;
+            	END WHILE; 
+            END IF;
+            RETURN FALSE; 
+      END; 
+END MODULE;
+
+CREATE COMPUTE MODULE Work_through_collection
+DECLARE OutputCodedCharSetId EXTERNAL CHARACTER;
+DECLARE OutputDomainName EXTERNAL CHARACTER;
+DECLARE OutputDocumentName EXTERNAL CHARACTER;
+DECLARE OutputRecordName EXTERNAL CHARACTER;
+DECLARE IntermediateDocumentName EXTERNAL CHARACTER;
+DECLARE IntermediateRecordName EXTERNAL CHARACTER;
+CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		SET OutputLocalEnvironment.Destination.MQDestinationList.DestinationData[1].queueName=InputRoot.Collection.CollectionName;
+		DECLARE i INTEGER 1;
+		DECLARE CollectionRef REFERENCE TO InputRoot.Collection.MQIn;		
+		SET OutputRoot.Properties=CollectionRef.Properties;
+		SET OutputRoot.MQMD=CollectionRef.MQMD;
+		SET OutputRoot.MQRFH2=CollectionRef.MQRFH2;
+		SET OutputRoot.Properties.CodedCharSetId=OutputCodedCharSetId;
+		SET OutputRoot.XML=NULL;
+		WHILE LASTMOVE(CollectionRef) DO
+                  DECLARE RecordRef REFERENCE TO CollectionRef.XML;
+                  IF Trim(IntermediateDocumentName)>'' THEN
+                        MOVE RecordRef TO RecordRef.{IntermediateDocumentName};
+                  END IF;
+                  MOVE RecordRef TO RecordRef.{IntermediateRecordName};
+                  WHILE LASTMOVE(RecordRef) DO
+                  		IF Trim(OutputRecordName)>'' THEN
+                        	SET OutputRoot.{OutputDomainName}.{OutputDocumentName}.{OutputRecordName}[i]=RecordRef;
+                  		ELSE
+                  			SET OutputRoot.{OutputDomainName}.{OutputDocumentName}[i]=RecordRef;
+                  		END IF;
+                        SET i=i+1;
+                        MOVE RecordRef NEXTSIBLING REPEAT TYPE NAME;
+                  END WHILE;
+                  MOVE CollectionRef NEXTSIBLING REPEAT TYPE NAME;
+            END WHILE;
+		RETURN TRUE;
+	END;
+END MODULE;

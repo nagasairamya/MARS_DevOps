@@ -1,0 +1,59 @@
+CREATE COMPUTE MODULE ATLPLS23_Compute
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		--------------------------------------------------------------------------------
+		-- Flow : ATLPLS23
+		-- Description : Altas - PDLS Integration for Hold & Release process
+		-- Source : ATLAS
+		-- Target :PDLS
+		-- IDOC Type :ZQF_IDOC_NEXUS
+		-- Message Type :ZQF_MTYP_NEXUS
+		-- Input Q : QL.IN.ATLPLS23
+		-- Output Q : QL.OUT.ATLPLS23.x
+		--------------------------------------------------------------------------------
+		--V001 CT#101036 Neha Ojha 02-02-2018 Initial Version
+		--V002 CT#110800 Neha Ojha 22-02-2018 Changed HU_WERKS value from FR25 to FR27
+		--------------------------------------------------------------------------------
+
+		DECLARE I INTEGER;
+		DECLARE COUNT_I INTEGER;
+		DECLARE QKEY CHARACTER;
+		DECLARE NEXKEY CHAR;
+
+		SET I = 1;
+		SET COUNT_I = CARDINALITY(InputRoot.*[]);
+		WHILE I < COUNT_I DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+		-- Map whole IDoc
+		SET OutputRoot.XML = InputRoot.XML;
+		DECLARE refIn REFERENCE TO InputRoot.XML.ZQF_IDOC_NEXUS.IDOC."_-MARS_-Z1QF_NX_NOTIFICATION";
+		DECLARE count INTEGER 1;
+		DECLARE c_segment INTEGER ;
+		SET c_segment =CARDINALITY (refIn."_-MARS_-Z4QF_NX_HU"[]);
+		WHILE (count<= c_segment) DO
+
+			IF refIn."_-MARS_-Z4QF_NX_HU"[count].HU_WERKS IN ('FR05', 'FR27','NL01') THEN
+				SET OutputLocalEnvironment.Destination.MQDestinationList.DestinationData[count].queueName
+				= COALESCE(THE(SELECT ITEM A.VALUE1
+				FROM Database.LUK3UV2 AS A
+				WHERE A.TABLE_NAME = 'OUTPUT_QUEUE_NAME'
+				AND A.KEY2 = 'ATLPLS23'
+				AND A.KEY3 =refIn."_-MARS_-Z4QF_NX_HU"[count].HU_WERKS),' ');	
+				----SET count =count+1;
+			END IF;
+			SET count =count+1;
+		END WHILE;
+	END;
+
+END MODULE;
+
+
+CREATE FILTER MODULE NULL_Filter
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		RETURN Root.XML IS NOT NULL;
+	END;
+
+END MODULE;

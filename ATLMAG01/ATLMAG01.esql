@@ -1,0 +1,99 @@
+
+
+CREATE COMPUTE MODULE "ATLMAG01_Compute"
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+-----------------------------------------------------------------------------------------------
+-- Interface:	 ATLMAG01
+-- Description:  Atlas to Magic 
+-- Modifications:
+--
+-- WO#46590  V001 Trevor Hunt 05-10-2006 Creation 
+--                            17-10-2006 Fixed typo on LIFNR  
+-- V003		Grégoire Fromont	30-Apr2012	Migration to WMB v7  
+----------------------------------------------------------------------------------------------- 
+
+		--Declare local variables for the Partner number and name for later use
+		DECLARE LOPARTN  CHAR;
+		DECLARE LONAME1  CHAR;	
+		--Declare local variables for loop processing
+		DECLARE X         INTEGER;
+		DECLARE CP01      INTEGER;
+		DECLARE LP01      INTEGER;
+		DECLARE CP20      INTEGER;
+		DECLARE LP20      INTEGER;
+		DECLARE OLC       INTEGER;
+
+		-- code that is required in all projects, for output processing
+		SET X = 1;
+		WHILE X < CARDINALITY(InputRoot.*[]) DO
+			SET OutputRoot.*[X] = InputRoot.*[X];
+			SET X = X + 1;
+		END WHILE;
+				
+		-- get the partner number and number where PARVW equal to 'LF' assuming there is multiple E1EDKA1
+		-- and one record with PARVW = 'LF'
+		SET LOPARTN =
+		THE (SELECT ITEM I.PARTN
+		  FROM InputRoot.XML.ZORDERS05.IDOC.E1EDKA1[] as I
+	 	  WHERE I.PARVW = 'LF');		
+	 	
+	 	SET LONAME1 =
+		THE (SELECT ITEM I.NAME1
+		  FROM InputRoot.XML.ZORDERS05.IDOC.E1EDKA1[] as I
+	 	  WHERE I.PARVW = 'LF');
+	 	
+	 	-- find out how many E1EDP01 elements exists, assuming that at least one exists  
+		SET CP01 = CARDINALITY(InputRoot.XML.ZORDERS05.IDOC.E1EDP01[]);
+		SET LP01 = 1;
+		SET OLC = 1;
+        WHILE LP01 <= CP01 DO
+			IF InputRoot.XML.ZORDERS05.IDOC.E1EDP01.WERKS = 'NL01'  AND
+  	   	   	   InputRoot.XML.ZORDERS05.IDOC.E1EDP01.LGORT = '0004' THEN
+
+				-- find out how many E1EDP20 elements exists, assuming that at one exists
+				--
+				SET CP20 = CARDINALITY(InputRoot.XML.ZORDERS05.IDOC.E1EDP01[LP01].E1EDP20[]);
+				SET LP20 = 1;
+        		WHILE LP20 <= CP20 DO	
+        			-- move IDOC document number and Document type to output
+				  	SET OutputRoot.XML.recordset.LINREC[OLC].LIN_BELNR = InputRoot.XML.ZORDERS05.IDOC.E1EDK01.BELNR;
+				 	SET OutputRoot.XML.recordset.LINREC[OLC].LIN_BSART = InputRoot.XML.ZORDERS05.IDOC.E1EDK01.BSART;
+
+        		 	-- using local variable move the partner name and number into the output
+        		 	SET OutputRoot.XML.recordset.LINREC[OLC].LIN_LIFNR = LOPARTN;
+  					SET OutputRoot.XML.recordset.LINREC[OLC].LIN_NAME1 = LONAME1;
+				
+					--	move Item number, IDOC: Date, IDOC: Time, Scheduled quantity and Unit of measure to output
+				 	SET OutputRoot.XML.recordset.LINREC[OLC].LIN_POSEX = InputRoot.XML.ZORDERS05.IDOC.E1EDP01[LP01].POSEX;
+				 	SET OutputRoot.XML.recordset.LINREC[OLC].LIN_MENEE = InputRoot.XML.ZORDERS05.IDOC.E1EDP01[LP01].MENEE;
+				 	SET OutputRoot.XML.recordset.LINREC[OLC].LIN_EDATU = InputRoot.XML.ZORDERS05.IDOC.E1EDP01[LP01].E1EDP20[LP20].EDATU;
+				 	SET OutputRoot.XML.recordset.LINREC[OLC].LIN_EZEIT = InputRoot.XML.ZORDERS05.IDOC.E1EDP01[LP01].E1EDP20[LP20].EZEIT;
+				 	SET OutputRoot.XML.recordset.LINREC[OLC].LIN_MENGE = InputRoot.XML.ZORDERS05.IDOC.E1EDP01[LP01].E1EDP20[LP20].WMENG;
+
+					-- move the IDTNR and KTEXT to the output
+					SET OutputRoot.XML.recordset.LINREC[OLC].LIN_MATNR =
+					  THE (SELECT ITEM D.IDTNR
+		  			  FROM InputRoot.XML.ZORDERS05.IDOC.E1EDP01[LP01].E1EDP19 as D
+	 	  			  WHERE D.QUALF = '001');
+	 	  			  
+					SET OutputRoot.XML.recordset.LINREC[OLC].LIN_MAKTX =
+					  THE (SELECT ITEM D.KTEXT
+		  			  FROM InputRoot.XML.ZORDERS05.IDOC.E1EDP01[LP01].E1EDP19 as D
+	 	  			  WHERE D.QUALF = '001');
+	 	  			
+	 	  			-- increment the P20 loop counter and output line counter
+	 	  			
+	 	  			SET LP20 = LP20 + 1;
+	 	  			SET OLC = OLC + 1;
+        		END WHILE;
+			END IF;
+			-- increment the p01 loop counter
+			SET LP01 = LP01 + 1;
+		END WHILE;
+		
+		RETURN TRUE;
+	END;
+
+
+END MODULE;

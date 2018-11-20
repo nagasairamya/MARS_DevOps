@@ -1,0 +1,360 @@
+
+CREATE COMPUTE MODULE ATLCAS14_Compute
+  CREATE FUNCTION main() RETURNS BOOLEAN 
+  BEGIN
+    -------------------------------------------------------------------
+    -- Flow         : ATLCAS14
+    -- Description  : ATLAS - CAS Actual Overall Volume.
+    -- Source       : ATLAS
+    -- Target       : CAS
+    -- IDOC Type    : ZTPMACTUALS
+    -- Extension    : 
+    -- Message Type : ZTPMACTUALS
+    -- Input Q      : QL.IN.ATLCAS14
+    -- Error Q      : QL.ERR_INF.ATLCAS14
+    --              : QL.ERR_APP.ATLCAS14
+    -- Output Q     : n/a
+    -------------------------------------------------------------------
+    -- V001 WO#690297 Don Arnison 20-May-2015 Initial version
+    --                            23-May-2015 Add leading zeros to numeric ProductId.
+    -- V002 WO#697237 Don Arnison 16-Jun-2015 Changed way to bundle objects in same message + manage negative sign for value
+    -- V003 WO#697237 Don Arnison 23-Jun-2015 Changed logic to bundle objects including the FROM that may vary
+    -- V005 CT#56075  Ranaveer    09-Feb-2017 Added NameSpaces with respect to new WSDL v11.1 (migration to CAS v11.1 for COMPASS v2.0 release).
+    -------------------------------------------------------------------
+    
+    DECLARE I ,U INTEGER;
+    DECLARE COUNT_I, COUNT_U INTEGER;
+    DECLARE J INTEGER;
+    DECLARE COUNT_J INTEGER;
+    DECLARE K INTEGER;
+    DECLARE FOUND, TRIGGERED BOOLEAN;
+    DECLARE "TIMESTAMP" CHAR;
+    DECLARE ValidFrom CHAR;
+    DECLARE ValidThru CHAR;
+    DECLARE THIS_KEY CHAR;
+    DECLARE LAST_KEY CHAR;
+    DECLARE VOLUME CHAR;
+
+    DECLARE ENCODING CHAR;
+    -- Declaration of namespace constants 
+    DECLARE soapenv NAMESPACE 'http://schemas.xmlsoap.org/soap/envelope/'; 
+    DECLARE acc NAMESPACE 'http://www.accenture.com/'; 
+
+    SET I = 1;
+    WHILE I < CARDINALITY(InputRoot.*[]) DO
+      SET OutputRoot.*[I] = InputRoot.*[I];
+      SET I = I + 1;
+    END WHILE;  
+  
+    -- Get Current GMT Date/Time Timestamp (see RUSMAR01 for getting local time)
+
+    SET "TIMESTAMP"
+      = CAST(EXTRACT(YEAR FROM CURRENT_GMTDATE) AS CHAR) || '-'
+      || CAST(EXTRACT(MONTH FROM CURRENT_GMTDATE) AS CHAR FORMAT '00') || '-'
+      || CAST(EXTRACT(DAY FROM CURRENT_GMTDATE) AS CHAR FORMAT '00') || ' '
+      || CAST(EXTRACT(HOUR FROM CURRENT_GMTTIME) AS CHAR FORMAT '00') || ':'
+      || CAST(EXTRACT(MINUTE FROM CURRENT_GMTTIME) AS CHAR FORMAT '00') || ':'
+      || CAST(EXTRACT(SECOND FROM CURRENT_GMTTIME) AS CHAR FORMAT '00');
+
+    -- HTTP Request Header
+
+    SET OutputRoot.HTTPRequestHeader.SOAPAction
+      = '"http://www.accenture.com/IWSContract/Import_PresentationLayerObject_AggregationQueue"';
+    SET OutputRoot.HTTPRequestHeader."Authorization" = ''; -- Place marker
+
+    -- Create the XML declaration
+    SET OutputRoot.XMLNS.(XML.XmlDecl)*.(XML.Version)* = '1.0';
+    SET OutputRoot.XMLNS.(XML.XmlDecl)*.(XML."Encoding")* = 'UTF-8';
+
+    -- Namespace declaration to associate prefix 'soapenv' with the namespace 
+    SET OutputRoot.XMLNS.soapenv:Envelope.(XML.NamespaceDecl)xmlns:soapenv
+      = 'http://schemas.xmlsoap.org/soap/envelope/'; 
+    SET OutputRoot.XMLNS.soapenv:Envelope.(XML.NamespaceDecl)xmlns:acc
+      = 'http://www.accenture.com/'; 
+
+    -- set Header Values
+    SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Header = '';
+
+    -----------------------------------------
+    -- set BodyHeader
+    -----------------------------------------
+
+    -- Specifies content type of Message
+    SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Body.acc:PresentationLayerObject_AggregationQueue
+        .acc:PresentationLayerObject_AggregationQueue_Body.Header.IntegrationObjectID
+      = 'AggregationQueue';
+    -- Timestamp when the Message was created
+    SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Body.acc:PresentationLayerObject_AggregationQueue
+        .acc:PresentationLayerObject_AggregationQueue_Body.Header.Timestamp
+      = "TIMESTAMP";
+    -- Unique ID (GUID) for this Message
+    SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Body.acc:PresentationLayerObject_AggregationQueue
+        .acc:PresentationLayerObject_AggregationQueue_Body.Header.MessageID
+      = InputRoot.XML.ZTPMACTUALS.IDOC.EDI_DC40.DOCNUM;
+    -- Logical Name for the originator of the Message
+    SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Body.acc:PresentationLayerObject_AggregationQueue
+        .acc:PresentationLayerObject_AggregationQueue_Body.Header.Sender
+      = 'SAP';
+    -- What needs to be done with the Message included in the Body element. e.g. UpdateOrInsert, Delete
+    SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Body.acc:PresentationLayerObject_AggregationQueue
+        .acc:PresentationLayerObject_AggregationQueue_Body.Header.Function
+      = 'UpdateOrInsert';
+    SET I = 1;
+    SET COUNT_J = 0;
+    SET LAST_KEY = '';
+    -- Loop for each segment ZTPMGENDATA\ZTPMACTUALS and generate 1 "AggregationQueueEntry" object
+    --  for each combo of ZTPMGENDATA\ZTPMACTUALS\KUNNR, REPMAT and FROM
+    SET COUNT_I = CARDINALITY(InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.ZTPMACTUALS[]);
+    WHILE I <= COUNT_I DO
+      IF InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.ZTPMACTUALS[I].QUALF = '002' THEN
+        SET THIS_KEY
+          = InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.ZTPMACTUALS[I].REPMAT
+          || InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.ZTPMACTUALS[I].KUNNR
+          || InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.ZTPMACTUALS[I].FROM;
+        SET J = 1;
+        SET FOUND = FALSE;
+        WHILE J <= COUNT_J AND NOT FOUND DO
+          IF THIS_KEY = InputLocalEnvironment.WORK[J].LAST_KEY THEN
+            SET FOUND = TRUE;
+          ELSE
+            SET J = J + 1;
+          END IF;
+        END WHILE;        
+        IF NOT FOUND THEN
+          SET COUNT_J = J;
+          SET InputLocalEnvironment.WORK[J].K = 0;      
+          -- Identifies system that is sending information
+          SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Body.acc:PresentationLayerObject_AggregationQueue
+              .acc:PresentationLayerObject_AggregationQueue_Body.Body.AggregationQueueEntry[J].HostSource
+            = 'SAP';
+          -- Reference to ERP sales organization segment.
+          SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Body.acc:PresentationLayerObject_AggregationQueue
+              .acc:PresentationLayerObject_AggregationQueue_Body.Body.AggregationQueueEntry[J].ERPSalesOrgID
+            = InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.VKORG;
+          -- Reference to ERP sales distribution channel.
+          SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Body.acc:PresentationLayerObject_AggregationQueue
+              .acc:PresentationLayerObject_AggregationQueue_Body.Body.AggregationQueueEntry[J].ERPDistribChannelID
+            = InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.VTWEG;
+          -- Reference to ERP sales division.
+          SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Body.acc:PresentationLayerObject_AggregationQueue
+              .acc:PresentationLayerObject_AggregationQueue_Body.Body.AggregationQueueEntry[J].ERPDivisionID
+            = InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.SPART;
+          -- Id of the source template
+          SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Body.acc:PresentationLayerObject_AggregationQueue
+              .acc:PresentationLayerObject_AggregationQueue_Body.Body.AggregationQueueEntry[J].SourceDataTemplate
+            = 'DailyMetric';
+          -- Target Template Id.
+          SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Body.acc:PresentationLayerObject_AggregationQueue
+              .acc:PresentationLayerObject_AggregationQueue_Body.Body.AggregationQueueEntry[J].TargetDataTemplate
+            = 'MyActualAccountPlanVolume';
+          -- Table to which the value should be aggregated to.
+          SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Body.acc:PresentationLayerObject_AggregationQueue
+              .acc:PresentationLayerObject_AggregationQueue_Body.Body.AggregationQueueEntry[J].TargetTable
+            = 'StcMetricData';
+        END IF;
+        SET K = InputLocalEnvironment.WORK[J].K + 1;
+        -- Reference to the source product.
+        IF LOWER(InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.ZTPMACTUALS[I].REPMAT)
+          = UPPER(InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.ZTPMACTUALS[I].REPMAT) THEN
+          SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Body.acc:PresentationLayerObject_AggregationQueue
+              .acc:PresentationLayerObject_AggregationQueue_Body.Body.AggregationQueueEntry[J].AggregationQueueDatas.AggregationQueueEntryData[K].ProductID
+            = RIGHT('000000000000000000' || TRIM(InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.ZTPMACTUALS[I].REPMAT),18);
+        ELSE
+          SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Body.acc:PresentationLayerObject_AggregationQueue
+              .acc:PresentationLayerObject_AggregationQueue_Body.Body.AggregationQueueEntry[J].AggregationQueueDatas.AggregationQueueEntryData[K].ProductID
+            = InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.ZTPMACTUALS[I].REPMAT;
+        END IF;
+        -- Reference to the source customer (the customer to aggregate from)
+        SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Body.acc:PresentationLayerObject_AggregationQueue
+            .acc:PresentationLayerObject_AggregationQueue_Body.Body.AggregationQueueEntry[J].AggregationQueueDatas.AggregationQueueEntryData[K].CustomerID
+          = InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.ZTPMACTUALS[I].KUNNR || 
+            InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.VKORG ||
+            InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.VTWEG ||
+            InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.SPART;
+        -- From this date on the entry is valid. Format: YYYY-MM-DD
+        SET ValidFrom
+          = SUBSTRING(InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.ZTPMACTUALS[I].FROM FROM 1 FOR 4) || '-'
+         || SUBSTRING(InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.ZTPMACTUALS[I].FROM FROM 5 FOR 2) || '-'
+         || SUBSTRING(InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.ZTPMACTUALS[I].FROM FROM 7 FOR 2);
+        SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Body.acc:PresentationLayerObject_AggregationQueue
+            .acc:PresentationLayerObject_AggregationQueue_Body.Body.AggregationQueueEntry[J].AggregationQueueDatas.AggregationQueueEntryData[K].ValidFrom
+          = ValidFrom; 
+        -- Until this date the entry is valid = From Date plus 6 Format: YYYY-MM-DD
+        SET ValidThru
+          = CAST(CAST(ValidFrom || ' 00:00:01' AS TIMESTAMP) + CAST(6 AS INTERVAL DAY) AS CHAR FORMAT 'yyyy-MM-dd');
+        SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Body.acc:PresentationLayerObject_AggregationQueue
+            .acc:PresentationLayerObject_AggregationQueue_Body.Body.AggregationQueueEntry[J].AggregationQueueDatas.AggregationQueueEntryData[K].ValidThru
+          = ValidThru;
+        --
+        --  Transpose '-' from suffix to prefix (eg from 0.85- to -0.85)
+        --
+        SET VOLUME
+          = TRIM(InputRoot.XML.ZTPMACTUALS.IDOC.ZTPMGENDATA.ZTPMACTUALS[I].VOLUME);
+        IF POSITION('-' IN VOLUME) > 0 THEN -- VOLUME is negative
+          -- Replace '-' in VOLUME with NULL string effectively removes any '-' from VOLUME
+          -- Then prefix VOLUME with '-' character.
+          SET VOLUME
+            = '-' || REPLACE(VOLUME,'-');
+        END IF;
+        -- Value
+        SET OutputRoot.XMLNS.soapenv:Envelope.soapenv:Body.acc:PresentationLayerObject_AggregationQueue
+            .acc:PresentationLayerObject_AggregationQueue_Body.Body.AggregationQueueEntry[J].AggregationQueueDatas.AggregationQueueEntryData[K].Value
+          = CAST(CAST(VOLUME AS DECIMAL (15,6)) AS CHAR FORMAT '#########.######');
+        SET InputLocalEnvironment.WORK[J].K = K;
+        SET InputLocalEnvironment.WORK[J].LAST_KEY = THIS_KEY;
+      END IF;
+      SET I = I + 1;
+    END WHILE;
+
+    IF COUNT_J = 0 THEN -- No AggregationQueueEntryData
+      RETURN FALSE; -- Do not propagate output message
+    END IF;
+
+    -- Save IDoc number for possible STATUS feedback to Atlas
+
+    SET OutputLocalEnvironment.EDI_DC40.DOCNUM
+      = InputBody.*[<].IDOC.EDI_DC40.DOCNUM;
+
+    -- assign RequestURL
+--    SET InputLocalEnvironment.ACAS_CONNECT[]
+--      = SELECT A.KEY1 AS ADDRESS,
+--               A.VALUE1 AS PORT,
+--               A.VALUE2 AS "FUNCTION",
+--               A.VALUE3 AS USERNAME,
+--               A.VALUE4 AS PASSWORD,
+--               A.VALUE5 AS NAMESPACECALL
+--        FROM Database.LUK1MV5 AS A
+--        WHERE A.TABLE_NAME = 'ACAS_CONNECT';
+--        -- WHERE A.TABLE_NAME = 'ACAS_TEST';
+      
+      SET InputLocalEnvironment.CAS_INBOUND_QUEUE[]
+		= SELECT A.KEY1 AS C_INTERFACE,
+		A.KEY2 AS C_REGION,
+		A.VALUE1 AS C_ADDRESS,
+		A.VALUE2 AS C_PORT,
+		A.VALUE3 AS C_FUNCTION,
+		A.VALUE4 AS C_USERNAME,
+		A.VALUE5 AS C_PASSWORD,
+		A.VALUE6 AS C_SCHEMA,
+		A.VALUE7 AS C_TIMEOUT
+		FROM Database.LUK2UV8 AS A
+		WHERE A.TABLE_NAME = 'CAS_INBOUND_QUEUE' AND A.KEY1 = 'ATLCAS14';
+		
+		
+		
+		SET COUNT_U = CARDINALITY(InputLocalEnvironment.CAS_INBOUND_QUEUE[]);
+		
+		SET U = 1;
+		SET TRIGGERED = FALSE;
+			WHILE U <= COUNT_U DO
+				IF CONTAINS(InputRoot.XML.ZTPMACTUALS.IDOC.EDI_DC40.SNDPRN,InputLocalEnvironment.CAS_INBOUND_QUEUE[U].C_REGION) AND NOT TRIGGERED THEN
+					SET OutputLocalEnvironment.Destination.HTTP.RequestURL
+							= 'https://' || InputLocalEnvironment.CAS_INBOUND_QUEUE[U].C_ADDRESS || ':' ||
+								InputLocalEnvironment.CAS_INBOUND_QUEUE[U].C_PORT || '/' ||
+								InputLocalEnvironment.CAS_INBOUND_QUEUE[U].C_FUNCTION;
+								
+					SET OutputLocalEnvironment.Destination.HTTP.Timeout
+        					= CAST(InputLocalEnvironment.CAS_INBOUND_QUEUE[U].C_TIMEOUT AS INTEGER);
+        					
+				 	IF InputLocalEnvironment.CAS_INBOUND_QUEUE[U].C_USERNAME IS NOT NULL AND InputLocalEnvironment.CAS_INBOUND_QUEUE[U].C_PASSWORD IS NOT NULL THEN
+					-- pass username and password to HTTPRequest
+						SET ENCODING
+						= BASE64ENCODE(InputLocalEnvironment.CAS_INBOUND_QUEUE[U].C_USERNAME || ':' ||
+						InputLocalEnvironment.CAS_INBOUND_QUEUE[U].C_PASSWORD);
+						SET OutputRoot.HTTPRequestHeader."Authorization"
+						= 'Basic ' || ENCODING;
+					ELSE
+						SET OutputRoot.HTTPRequestHeader."Authorization" = NULL; -- delete entry
+					END IF;	
+					IF (InputLocalEnvironment.CAS_INBOUND_QUEUE[U].C_SCHEMA = '1') THEN
+						DECLARE BodyRefPtr REFERENCE TO OutputRoot.XMLNS.*:Envelope.*:Body;
+						CALL AddNamespaces(BodyRefPtr);
+					END IF;
+					SET TRIGGERED = TRUE;
+					PROPAGATE DELETE NONE; -- propagate message for each entry in ACAS_CONNECT
+				
+							END IF;
+				SET U = U + 1;
+			END WHILE;
+
+    RETURN FALSE; -- Do not propagate final output message
+
+    -- END OF PROGRAM --
+
+  END;
+
+END MODULE;
+  
+  
+   /* SET InputLocalEnvironment.ACAS_CONNECT[]
+      = SELECT A.KEY1 AS ADDRESS,
+               A.VALUE1 AS PORT,
+               A.VALUE2 AS "FUNCTION",
+               A.VALUE3 AS USERNAME,
+               A.VALUE4 AS PASSWORD,
+               A.VALUE5 AS NAMESPACECALL,
+               A.VALUE6 AS TIMEOUT
+            FROM Database.LUK1UV6 AS A
+            WHERE A.TABLE_NAME = 'ACAS_EXT_CONNECT';
+
+
+    SET J = 1;
+    SET COUNT_J = CARDINALITY(InputLocalEnvironment.ACAS_CONNECT[]);
+    WHILE J <= COUNT_J DO
+      SET OutputLocalEnvironment.Destination.HTTP.RequestURL
+        = 'https://' || InputLocalEnvironment.ACAS_CONNECT[J].ADDRESS || ':' ||
+          InputLocalEnvironment.ACAS_CONNECT[J].PORT || '/' ||
+          InputLocalEnvironment.ACAS_CONNECT[J]."FUNCTION";
+
+      SET OutputLocalEnvironment.Destination.HTTP.Timeout
+        = CAST(InputLocalEnvironment.ACAS_CONNECT[J].TIMEOUT AS INTEGER);
+
+      IF InputLocalEnvironment.ACAS_CONNECT[J].USERNAME IS NOT NULL THEN
+        -- pass username and password to HTTPRequest
+        SET ENCODING
+          = BASE64ENCODE(InputLocalEnvironment.ACAS_CONNECT[J].USERNAME || ':' ||
+            InputLocalEnvironment.ACAS_CONNECT[J].PASSWORD);
+        SET OutputRoot.HTTPRequestHeader."Authorization"
+          = 'Basic ' || ENCODING;
+      ELSE
+        SET OutputRoot.HTTPRequestHeader."Authorization" = NULL; -- delete entry
+      END IF;
+      
+       --*******Adding NameSpace**********--        
+      IF (InputLocalEnvironment.ACAS_CONNECT[K].NAMESPACECALL = '1') THEN
+      	   DECLARE BodyRefPtr REFERENCE TO  OutputRoot.XMLNS.*:Envelope.*:Body;     
+	       CALL AddNamespaces(BodyRefPtr);
+       END IF;
+      --*******End of Adding NameSpace***--
+      
+      PROPAGATE DELETE NONE; -- propagate message for each entry in ACAS_CONNECT
+      SET J = J + 1;
+    END WHILE;
+    RETURN FALSE; -- Do not propagate final output message
+    
+    -- END OF PROGRAM --
+
+  END;
+
+END MODULE;*/
+
+/*
+* AddNamespaces procedure is used to add namespaces to all the fields of the message which is being sent as parameter to this procedure.
+* It is developed as part of V2.0 migration of Compass system.
+* Added NameSpaces with respect to new WSDL v11.1 (migration to CAS v11.1 for COMPASS v2.0 release).
+**/
+
+CREATE PROCEDURE AddNamespaces(IN StartRefPtr REFERENCE)
+	BEGIN
+		DECLARE acc NAMESPACE 'http://www.accenture.com/'; 
+		DECLARE FieldRefPtr REFERENCE TO StartRefPtr;       
+		MOVE FieldRefPtr FIRSTCHILD;
+
+		WHILE LASTMOVE(FieldRefPtr) DO
+			CALL AddNamespaces(FieldRefPtr);
+			IF FIELDTYPE(FieldRefPtr) IN (0x01000000) THEN               
+                SET FieldRefPtr NAMESPACE = acc;
+			END IF;
+			MOVE FieldRefPtr NEXTSIBLING;
+		END WHILE;
+	END;
