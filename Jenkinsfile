@@ -7,12 +7,5 @@ agent any
             git 'https://github.com/nagasairamya/MARS_DevOps.git/'
         }
     }
-    stage ('compile stage')
-  {
-   steps
-      {
-          sh 'mvn clean install'
       }
-    }
-  }
   }
