@@ -2,14 +2,13 @@ pipeline{
 agent any
   
   stages {
+    stage ('SCM Checkout')
+    {
+      git 'https://github.com/nagasairamya/MARS_DevOps.git/'
+    }
     stage ('compile stage')
   {
-    steps {
-    withmaven(maven : 'Maven')
-    {
-      sh 'mvn clean compile'
+    sh 'mvn clean compile'
     }
   }
   }
-  }
-}
