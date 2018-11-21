@@ -11,7 +11,7 @@ agent any
   {
    steps
       {
-          sh 'mvn clean compile'
+          sh 'mvn clean install'
       }
     }
   }
