@@ -1,0 +1,69 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>MARS_DevOps</artifactId>
+
+    <packaging>pom</packaging>
+    <name>MARS_DevOps</name>
+
+    <properties>
+    	<build.number />
+    </properties>
+
+    <scm>
+        <connection>scm:git:https://github.com/nagasairamya/MARS_DevOps.git</connection>
+        <developerConnection>scm:git:https://github.com/nagasairamya/MARS_DevOps.git</developerConnection>
+      <tag>HEAD</tag>
+  </scm>
+
+    <distributionManagement>
+        <repository>
+            <id>nagasairamya</id>
+            <name>MARS_DevOps</name>
+            <url>https://github.com/nagasairamya/MARS_DevOps.git</url>
+        </repository>
+        </distributionManagement>
+	
+	<build>
+	   <plugins>
+              <plugin>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>2.5.3</version>
+                <configuration>
+                  <descriptor>tar.xml</descriptor>
+                </configuration>
+                <executions>
+                   <execution>
+                        <id>make-assembly</id>
+                        <phase>package</phase>
+                        <goals>
+                                <goal>single</goal>
+                        </goals>
+                   </execution>
+                </executions>
+             </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>versions-maven-plugin</artifactId>
+                    <version>2.1</version>
+                </plugin>
+                <plugin>
+                    <artifactId>maven-scm-plugin</artifactId>
+                    <version>1.8.1</version>
+                    <configuration>
+                        <tag>${project.artifactId}-${project.version}</tag>
+                    </configuration>
+                </plugin>
+           </plugins>
+           <extensions>
+               <extension>
+                   <groupId>org.kuali.maven.wagons</groupId>
+                   <artifactId>maven-s3-wagon</artifactId>
+                   <version>1.2.1</version>
+               </extension>
+            </extensions>
+	</build>
+
+</project>
+
+
