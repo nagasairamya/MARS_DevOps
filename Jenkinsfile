@@ -6,7 +6,7 @@ git 'https://github.com/nagasairamya/MARS_DevOps.git'
 }
 stage ('compile-package')
 {
-sh 'maven package'
+sh 'mvn package'
 }
 }
 
