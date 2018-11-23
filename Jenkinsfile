@@ -14,7 +14,7 @@ agent any
         stage ('compile')
         {
             steps {
-               sh  'mvn clean install'
+               bat 'mvn clean install'
             }
         }
       }
