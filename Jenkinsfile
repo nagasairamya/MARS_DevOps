@@ -10,7 +10,7 @@ agent any
         stage ('clean')
         {
             steps {
-                sh 'mvn clean'
+                sh 'maven clean'
             }
         }
       }
