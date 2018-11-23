@@ -11,10 +11,10 @@ agent any
             git 'https://github.com/nagasairamya/MARS_DevOps.git/'
         }
     }
-        stage ('clean')
+        stage ('compile')
         {
             steps {
-               sh 'maven clean'
+               sh 'maven compile'
             }
         }
       }
