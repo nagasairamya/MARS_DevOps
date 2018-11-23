@@ -14,7 +14,9 @@ agent any
         stage ('compile')
         {
             steps {
+                 withMaven(Maven : "apache-3.6.0-"){
                bat 'mvn clean install'
+            }
             }
         }
       }
