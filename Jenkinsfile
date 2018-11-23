@@ -7,5 +7,11 @@ agent any
             git 'https://github.com/nagasairamya/MARS_DevOps.git/'
         }
     }
+        stage ('Build')
+        {
+            steps {
+                echo " This is a minimal pipeline"
+            }
+        }
       }
   }
