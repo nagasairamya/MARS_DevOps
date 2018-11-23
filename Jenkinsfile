@@ -7,11 +7,10 @@ agent any
             git 'https://github.com/nagasairamya/MARS_DevOps.git/'
         }
     }
-        stage ('Build')
+        stage ('clean')
         {
             steps {
-                echo " Building Assets "
-                sh 'mvn -B -DskipTests clean package'
+                sh 'mvn clean'
             }
         }
       }
