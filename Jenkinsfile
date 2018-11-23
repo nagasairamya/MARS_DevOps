@@ -10,7 +10,7 @@ agent any
         stage ('Build')
         {
             steps {
-                echo " This is a minimal pipeline"
+                echo " Building Assets "
                 sh 'mvn -B -DskipTests clean package'
             }
         }
