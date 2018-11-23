@@ -1,5 +1,9 @@
 pipeline{
 agent any
+     tools { 
+        maven 'Maven 3.6.0'
+     }       
+         
     stages {
     stage ('SCM Checkout')
     {
@@ -10,7 +14,7 @@ agent any
         stage ('clean')
         {
             steps {
-                sh 'maven clean'
+               sh 'maven clean'
             }
         }
       }
