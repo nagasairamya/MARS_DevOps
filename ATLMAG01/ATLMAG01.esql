@@ -97,3 +97,7 @@ CREATE COMPUTE MODULE "ATLMAG01_Compute"
 --END;
 
 END MODULE;
+
+
+
+--Ending module;
